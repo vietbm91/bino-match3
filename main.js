@@ -1,17 +1,22 @@
 const config = {
     type: Phaser.WEBGL,
-    width: 800, // Mở rộng chiều ngang
-    height: 900, // Mở rộng chiều dọc
+    // --- KÍCH HOẠT CHẾ ĐỘ RESPONSIVE ĐA THIẾT BỊ ---
+    scale: {
+        mode: Phaser.Scale.FIT, // Tự động thu phóng vừa màn hình (không làm méo hình)
+        autoCenter: Phaser.Scale.CENTER_BOTH, // Tự động căn giữa tuyệt đối
+        width: 700, // Kích thước gốc (Tỷ lệ chuẩn)
+        height: 800
+    },
     backgroundColor: '#000000',
     scene: { preload: preload, create: create }
 };
 
 const game = new Phaser.Game(config);
 
-const GRID_SIZE = 16; // SIÊU MA TRẬN 16x16
-const TILE_SIZE = 45; // Thu nhỏ ô lưới để vừa màn hình
-const OFFSET_X = 40;  // Căn lề trái mới
-const OFFSET_Y = 100; // Căn lề trên mới
+const GRID_SIZE = 10; // TỶ LỆ VÀNG: 10x10
+const TILE_SIZE = 60; // Gạch to lại bằng 60px để dễ vuốt chạm
+const OFFSET_X = 50;  
+const OFFSET_Y = 100; 
 
 let grid = [];
 let selectedTile = null;
@@ -31,15 +36,15 @@ function preload() {}
 function create() {
     let currentScene = this;
     
-    // Tăng số lượt đi vì bảng giờ rất to, nổ dây chuyền nhiều
-    moves = Math.max(15, 30 - (currentLevel * 2)); 
-    targetScore = 2000 + ((currentLevel - 1) * 1000); 
+    // Độ khó vừa phải cho bảng 10x10
+    moves = Math.max(15, 25 - (currentLevel * 2)); 
+    targetScore = 1500 + ((currentLevel - 1) * 800); 
     
     score = 0; comboMultiplier = 1; isGameOver = false; isAnimating = false;
 
     // Vẽ Lưới Cyan
     let graphics = this.add.graphics();
-    graphics.lineStyle(2, 0x00FFFF, 0.3); // Giảm độ dày nét một chút vì lưới 16x16 khá dày đặc
+    graphics.lineStyle(3, 0x00FFFF, 0.4); 
     for (let i = 0; i <= GRID_SIZE; i++) {
         graphics.moveTo(OFFSET_X + i * TILE_SIZE, OFFSET_Y);
         graphics.lineTo(OFFSET_X + i * TILE_SIZE, OFFSET_Y + GRID_SIZE * TILE_SIZE);
@@ -49,12 +54,12 @@ function create() {
     graphics.strokePath();
 
     // --- GIAO DIỆN CHƠI (UI) ---
-    levelText = this.add.text(400, 20, 'LEVEL ' + currentLevel, { fontSize: '32px', fill: '#FFFFFF', fontStyle: 'bold' }).setOrigin(0.5);
+    levelText = this.add.text(350, 20, 'LEVEL ' + currentLevel, { fontSize: '32px', fill: '#FFFFFF', fontStyle: 'bold' }).setOrigin(0.5);
     scoreText = this.add.text(OFFSET_X, 20, 'SCORE: 0', { fontSize: '24px', fill: '#00FFFF', fontStyle: 'bold' }).setOrigin(0, 0.5);
     targetText = this.add.text(OFFSET_X, 55, 'TARGET: ' + targetScore, { fontSize: '18px', fill: '#00FFFF' }).setOrigin(0, 0.5);
-    movesText = this.add.text(OFFSET_X + GRID_SIZE * TILE_SIZE, 35, 'MOVES: ' + moves, { fontSize: '36px', fill: '#FF0000', fontStyle: 'bold' }).setOrigin(1, 0.5);
+    movesText = this.add.text(OFFSET_X + GRID_SIZE * TILE_SIZE, 35, 'MOVES: ' + moves, { fontSize: '32px', fill: '#FF0000', fontStyle: 'bold' }).setOrigin(1, 0.5);
 
-    this.add.text(400, 860, 'BINO MATCH-3: 16x16 MATRIX EDITION', { fontSize: '20px', fill: '#FF0000' }).setOrigin(0.5);
+    this.add.text(350, 750, 'BINO MATCH-3: BALANCED EDITION', { fontSize: '20px', fill: '#FF0000' }).setOrigin(0.5);
 
     for (let row = 0; row < GRID_SIZE; row++) {
         grid[row] = [];
@@ -65,13 +70,13 @@ function create() {
     removeInitialMatches(currentScene);
 }
 
-// --- HÀM TOÁN HỌC TẠO ĐA GIÁC (Ngũ giác, Lục giác) ---
+// --- HÀM TOÁN HỌC TẠO ĐA GIÁC ---
 function getPolygonPoints(sides, radius) {
     let points = [];
     for (let i = 0; i < sides; i++) {
-        let angle = (i * 2 * Math.PI / sides) - (Math.PI / 2); // Xoay đỉnh nhọn lên trên
-        points.push(radius * Math.cos(angle) + radius); // X
-        points.push(radius * Math.sin(angle) + radius); // Y
+        let angle = (i * 2 * Math.PI / sides) - (Math.PI / 2); 
+        points.push(radius * Math.cos(angle) + radius); 
+        points.push(radius * Math.sin(angle) + radius); 
     }
     return points;
 }
@@ -80,25 +85,18 @@ function spawnTile(scene, row, col) {
     let x = OFFSET_X + col * TILE_SIZE + TILE_SIZE / 2;
     let y = OFFSET_Y + row * TILE_SIZE + TILE_SIZE / 2;
     
-    // TĂNG SỐ LƯỢNG HÌNH KHỐI LÊN 6: (0->5)
-    let shapeType = Phaser.Math.Between(0, 5); 
+    // GIẢM XUỐNG 5 HÌNH: Loại bỏ Lục Giác gây lú mắt
+    let shapeType = Phaser.Math.Between(0, 4); 
     let tile;
-    let size = TILE_SIZE * 0.7; // Tăng nhẹ tỷ lệ lấp đầy ô vì lưới nhỏ
+    let size = TILE_SIZE * 0.65; 
     let half = size / 2;
 
     switch(shapeType) {
-        case 0: // Hình Vuông
-            tile = scene.add.rectangle(x, y, size, size, 0xFF0000).setOrigin(0.5); break;
-        case 1: // Hình Tròn
-            tile = scene.add.circle(x, y, half, 0xFF0000); break;
-        case 2: // Hình Tam Giác
-            tile = scene.add.triangle(x, y, half, 0, 0, size, size, size, 0xFF0000).setOrigin(0.5); break;
-        case 3: // Hình Thoi
-            tile = scene.add.rectangle(x, y, size * 0.8, size * 0.8, 0xFF0000).setOrigin(0.5); tile.angle = 45; break;
-        case 4: // HÌNH NGŨ GIÁC (Mới)
-            tile = scene.add.polygon(x, y, getPolygonPoints(5, half), 0xFF0000).setOrigin(0.5); break;
-        case 5: // HÌNH LỤC GIÁC (Mới)
-            tile = scene.add.polygon(x, y, getPolygonPoints(6, half), 0xFF0000).setOrigin(0.5); break;
+        case 0: tile = scene.add.rectangle(x, y, size, size, 0xFF0000).setOrigin(0.5); break;
+        case 1: tile = scene.add.circle(x, y, half, 0xFF0000); break;
+        case 2: tile = scene.add.triangle(x, y, half, 0, 0, size, size, size, 0xFF0000).setOrigin(0.5); break;
+        case 3: tile = scene.add.rectangle(x, y, size * 0.8, size * 0.8, 0xFF0000).setOrigin(0.5); tile.angle = 45; break;
+        case 4: tile = scene.add.polygon(x, y, getPolygonPoints(5, half), 0xFF0000).setOrigin(0.5); break;
     }
 
     tile.setBlendMode(Phaser.BlendModes.SCREEN);
@@ -203,10 +201,7 @@ function processMatches(matches, scene) {
     centerX /= matches.length; centerY /= matches.length;
 
     let floatText = scene.add.text(centerX, centerY, '+' + pointsGained + (comboMultiplier > 1 ? ' (x'+comboMultiplier+')' : ''), { fontSize: '28px', fill: '#00FFFF', fontStyle: 'bold' }).setOrigin(0.5);
-    scene.tweens.add({
-        targets: floatText, y: centerY - 60, alpha: 0, duration: 1000,
-        onComplete: () => floatText.destroy()
-    });
+    scene.tweens.add({ targets: floatText, y: centerY - 60, alpha: 0, duration: 1000, onComplete: () => floatText.destroy() });
 
     scene.tweens.add({
         targets: matches, scaleX: 0, scaleY: 0, duration: 200,
@@ -271,17 +266,17 @@ function checkGameOver(scene) {
 }
 
 function showEndScreen(scene, message, color, isWin) {
-    let overlay = scene.add.rectangle(400, 450, 800, 900, 0x000000).setAlpha(0);
+    let overlay = scene.add.rectangle(350, 400, 700, 800, 0x000000).setAlpha(0);
     scene.tweens.add({ targets: overlay, alpha: 0.8, duration: 500 });
 
-    let text = scene.add.text(400, 400, message, { fontSize: '48px', fill: color, fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
+    let text = scene.add.text(350, 350, message, { fontSize: '40px', fill: color, fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
     text.setAlpha(0);
     scene.tweens.add({ targets: text, alpha: 1, duration: 500, delay: 300 });
 
     let btnText = isWin ? '[ NEXT LEVEL ]' : '[ PLAY AGAIN ]';
     let btnColor = isWin ? '#FFFF00' : '#FFFFFF'; 
     
-    let restartBtn = scene.add.text(400, 520, btnText, { fontSize: '32px', fill: btnColor, fontStyle: 'bold' }).setOrigin(0.5);
+    let restartBtn = scene.add.text(350, 480, btnText, { fontSize: '28px', fill: btnColor, fontStyle: 'bold' }).setOrigin(0.5);
     restartBtn.setInteractive({ useHandCursor: true });
     scene.tweens.add({ targets: restartBtn, alpha: 0.5, duration: 800, yoyo: true, repeat: -1 });
 
