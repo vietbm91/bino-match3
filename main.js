@@ -1,28 +1,27 @@
 const config = {
     type: Phaser.WEBGL,
-    width: 600,
-    height: 700,
+    width: 800, // Mở rộng chiều ngang
+    height: 900, // Mở rộng chiều dọc
     backgroundColor: '#000000',
     scene: { preload: preload, create: create }
 };
 
 const game = new Phaser.Game(config);
 
-const GRID_SIZE = 8;
-const TILE_SIZE = 60;
-const OFFSET_X = 60;
-const OFFSET_Y = 100;
+const GRID_SIZE = 16; // SIÊU MA TRẬN 16x16
+const TILE_SIZE = 45; // Thu nhỏ ô lưới để vừa màn hình
+const OFFSET_X = 40;  // Căn lề trái mới
+const OFFSET_Y = 100; // Căn lề trên mới
 
 let grid = [];
 let selectedTile = null;
 let isAnimating = false;
 let isGameOver = false;
 
-// --- HỆ THỐNG LEVEL & ĐIỂM SỐ ---
-let currentLevel = 1;      // Bắt đầu từ Level 1
-let score = 0;             // Điểm của màn hiện tại
-let moves = 0;             
-let targetScore = 0;       
+let currentLevel = 1;
+let score = 0;
+let moves = 0;
+let targetScore = 0;
 let comboMultiplier = 1;
 
 let scoreText, movesText, targetText, levelText;
@@ -32,21 +31,15 @@ function preload() {}
 function create() {
     let currentScene = this;
     
-    // Thuật toán Tăng độ khó:
-    // Level 1: 20 moves. Level 2: 18 moves. Level 3: 16 moves... (Tối thiểu 10 moves)
-    moves = Math.max(10, 22 - (currentLevel * 2)); 
+    // Tăng số lượt đi vì bảng giờ rất to, nổ dây chuyền nhiều
+    moves = Math.max(15, 30 - (currentLevel * 2)); 
+    targetScore = 2000 + ((currentLevel - 1) * 1000); 
     
-    // Level 1: 1000 điểm. Level 2: 1500 điểm. Level 3: 2000 điểm...
-    targetScore = 1000 + ((currentLevel - 1) * 500); 
-    
-    score = 0; 
-    comboMultiplier = 1; 
-    isGameOver = false;
-    isAnimating = false;
+    score = 0; comboMultiplier = 1; isGameOver = false; isAnimating = false;
 
     // Vẽ Lưới Cyan
     let graphics = this.add.graphics();
-    graphics.lineStyle(4, 0x00FFFF, 0.4);
+    graphics.lineStyle(2, 0x00FFFF, 0.3); // Giảm độ dày nét một chút vì lưới 16x16 khá dày đặc
     for (let i = 0; i <= GRID_SIZE; i++) {
         graphics.moveTo(OFFSET_X + i * TILE_SIZE, OFFSET_Y);
         graphics.lineTo(OFFSET_X + i * TILE_SIZE, OFFSET_Y + GRID_SIZE * TILE_SIZE);
@@ -56,16 +49,13 @@ function create() {
     graphics.strokePath();
 
     // --- GIAO DIỆN CHƠI (UI) ---
-    // Hiển thị Level ở chính giữa trên cùng
-    levelText = this.add.text(300, 20, 'LEVEL ' + currentLevel, { fontSize: '28px', fill: '#FFFFFF', fontStyle: 'bold' }).setOrigin(0.5);
-    
-    scoreText = this.add.text(OFFSET_X, 20, 'SCORE: 0', { fontSize: '20px', fill: '#00FFFF', fontStyle: 'bold' }).setOrigin(0, 0.5);
-    targetText = this.add.text(OFFSET_X, 50, 'TARGET: ' + targetScore, { fontSize: '16px', fill: '#00FFFF' }).setOrigin(0, 0.5);
-    movesText = this.add.text(OFFSET_X + GRID_SIZE * TILE_SIZE, 35, 'MOVES: ' + moves, { fontSize: '28px', fill: '#FF0000', fontStyle: 'bold' }).setOrigin(1, 0.5);
+    levelText = this.add.text(400, 20, 'LEVEL ' + currentLevel, { fontSize: '32px', fill: '#FFFFFF', fontStyle: 'bold' }).setOrigin(0.5);
+    scoreText = this.add.text(OFFSET_X, 20, 'SCORE: 0', { fontSize: '24px', fill: '#00FFFF', fontStyle: 'bold' }).setOrigin(0, 0.5);
+    targetText = this.add.text(OFFSET_X, 55, 'TARGET: ' + targetScore, { fontSize: '18px', fill: '#00FFFF' }).setOrigin(0, 0.5);
+    movesText = this.add.text(OFFSET_X + GRID_SIZE * TILE_SIZE, 35, 'MOVES: ' + moves, { fontSize: '36px', fill: '#FF0000', fontStyle: 'bold' }).setOrigin(1, 0.5);
 
-    this.add.text(300, 650, 'BINO MATCH-3: MEDICAL EDITION', { fontSize: '18px', fill: '#FF0000' }).setOrigin(0.5);
+    this.add.text(400, 860, 'BINO MATCH-3: 16x16 MATRIX EDITION', { fontSize: '20px', fill: '#FF0000' }).setOrigin(0.5);
 
-    // Sinh kẹo
     for (let row = 0; row < GRID_SIZE; row++) {
         grid[row] = [];
         for (let col = 0; col < GRID_SIZE; col++) {
@@ -75,18 +65,40 @@ function create() {
     removeInitialMatches(currentScene);
 }
 
+// --- HÀM TOÁN HỌC TẠO ĐA GIÁC (Ngũ giác, Lục giác) ---
+function getPolygonPoints(sides, radius) {
+    let points = [];
+    for (let i = 0; i < sides; i++) {
+        let angle = (i * 2 * Math.PI / sides) - (Math.PI / 2); // Xoay đỉnh nhọn lên trên
+        points.push(radius * Math.cos(angle) + radius); // X
+        points.push(radius * Math.sin(angle) + radius); // Y
+    }
+    return points;
+}
+
 function spawnTile(scene, row, col) {
     let x = OFFSET_X + col * TILE_SIZE + TILE_SIZE / 2;
     let y = OFFSET_Y + row * TILE_SIZE + TILE_SIZE / 2;
-    let shapeType = Phaser.Math.Between(0, 3);
+    
+    // TĂNG SỐ LƯỢNG HÌNH KHỐI LÊN 6: (0->5)
+    let shapeType = Phaser.Math.Between(0, 5); 
     let tile;
-    let size = TILE_SIZE * 0.6;
+    let size = TILE_SIZE * 0.7; // Tăng nhẹ tỷ lệ lấp đầy ô vì lưới nhỏ
+    let half = size / 2;
 
     switch(shapeType) {
-        case 0: tile = scene.add.rectangle(x, y, size, size, 0xFF0000).setOrigin(0.5); break;
-        case 1: tile = scene.add.circle(x, y, size / 2, 0xFF0000); break;
-        case 2: tile = scene.add.triangle(x, y, size / 2, 0, 0, size, size, size, 0xFF0000).setOrigin(0.5); break;
-        case 3: tile = scene.add.rectangle(x, y, size * 0.75, size * 0.75, 0xFF0000).setOrigin(0.5); tile.angle = 45; break;
+        case 0: // Hình Vuông
+            tile = scene.add.rectangle(x, y, size, size, 0xFF0000).setOrigin(0.5); break;
+        case 1: // Hình Tròn
+            tile = scene.add.circle(x, y, half, 0xFF0000); break;
+        case 2: // Hình Tam Giác
+            tile = scene.add.triangle(x, y, half, 0, 0, size, size, size, 0xFF0000).setOrigin(0.5); break;
+        case 3: // Hình Thoi
+            tile = scene.add.rectangle(x, y, size * 0.8, size * 0.8, 0xFF0000).setOrigin(0.5); tile.angle = 45; break;
+        case 4: // HÌNH NGŨ GIÁC (Mới)
+            tile = scene.add.polygon(x, y, getPolygonPoints(5, half), 0xFF0000).setOrigin(0.5); break;
+        case 5: // HÌNH LỤC GIÁC (Mới)
+            tile = scene.add.polygon(x, y, getPolygonPoints(6, half), 0xFF0000).setOrigin(0.5); break;
     }
 
     tile.setBlendMode(Phaser.BlendModes.SCREEN);
@@ -190,9 +202,9 @@ function processMatches(matches, scene) {
     matches.forEach(t => { centerX += t.x; centerY += t.y; });
     centerX /= matches.length; centerY /= matches.length;
 
-    let floatText = scene.add.text(centerX, centerY, '+' + pointsGained + (comboMultiplier > 1 ? ' (x'+comboMultiplier+')' : ''), { fontSize: '24px', fill: '#00FFFF', fontStyle: 'bold' }).setOrigin(0.5);
+    let floatText = scene.add.text(centerX, centerY, '+' + pointsGained + (comboMultiplier > 1 ? ' (x'+comboMultiplier+')' : ''), { fontSize: '28px', fill: '#00FFFF', fontStyle: 'bold' }).setOrigin(0.5);
     scene.tweens.add({
-        targets: floatText, y: centerY - 50, alpha: 0, duration: 1000,
+        targets: floatText, y: centerY - 60, alpha: 0, duration: 1000,
         onComplete: () => floatText.destroy()
     });
 
@@ -246,44 +258,37 @@ function refillGrid(scene) {
     }, 450);
 }
 
-// --- KIỂM TRA THẮNG / THUA & LÊN CẤP ---
 function checkGameOver(scene) {
     if (score >= targetScore) {
         isGameOver = true;
-        showEndScreen(scene, "LEVEL " + currentLevel + " CLEARED!", '#00FF00', true); // Thắng
+        showEndScreen(scene, "LEVEL " + currentLevel + " CLEARED!", '#00FF00', true); 
     } else if (moves <= 0) {
         isGameOver = true;
-        showEndScreen(scene, "OUT OF MOVES!\nGAME OVER", '#FF0000', false); // Thua
+        showEndScreen(scene, "OUT OF MOVES!\nGAME OVER", '#FF0000', false); 
     } else {
         isAnimating = false; 
     }
 }
 
 function showEndScreen(scene, message, color, isWin) {
-    let overlay = scene.add.rectangle(300, 350, 600, 700, 0x000000).setAlpha(0);
+    let overlay = scene.add.rectangle(400, 450, 800, 900, 0x000000).setAlpha(0);
     scene.tweens.add({ targets: overlay, alpha: 0.8, duration: 500 });
 
-    let text = scene.add.text(300, 350, message, { fontSize: '36px', fill: color, fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
+    let text = scene.add.text(400, 400, message, { fontSize: '48px', fill: color, fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
     text.setAlpha(0);
     scene.tweens.add({ targets: text, alpha: 1, duration: 500, delay: 300 });
 
-    // Nút bấm tùy thuộc vào Thắng hay Thua
     let btnText = isWin ? '[ NEXT LEVEL ]' : '[ PLAY AGAIN ]';
-    let btnColor = isWin ? '#FFFF00' : '#FFFFFF'; // Nếu thắng, nút màu vàng rực rỡ
+    let btnColor = isWin ? '#FFFF00' : '#FFFFFF'; 
     
-    let restartBtn = scene.add.text(300, 450, btnText, { fontSize: '24px', fill: btnColor, fontStyle: 'bold' }).setOrigin(0.5);
+    let restartBtn = scene.add.text(400, 520, btnText, { fontSize: '32px', fill: btnColor, fontStyle: 'bold' }).setOrigin(0.5);
     restartBtn.setInteractive({ useHandCursor: true });
-    
-    // Hiệu ứng nhấp nháy cho nút bấm
     scene.tweens.add({ targets: restartBtn, alpha: 0.5, duration: 800, yoyo: true, repeat: -1 });
 
     restartBtn.on('pointerdown', () => { 
-        if (isWin) {
-            currentLevel++; // Tăng Level
-        } else {
-            currentLevel = 1; // Thua thì cày lại từ đầu
-        }
-        scene.scene.restart(); // Khởi động lại game với thông số Level mới
+        if (isWin) currentLevel++; 
+        else currentLevel = 1; 
+        scene.scene.restart(); 
     });
 }
 
